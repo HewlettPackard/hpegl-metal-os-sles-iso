@@ -1,6 +1,4 @@
-<!-- (C) Copyright 2022 Hewlett Packard Enterprise Development LP -->
-
-# SLES Bring Your Own Image (BYOI) for GreenLake Metal (GLM)
+(C) Copyright 2022 Hewlett Packard Enterprise Development LP
 # Table of contents
 * [Building the SLES image](#building-the-sles-image)
 * [Customizing the SLES image](#customizing-the-sles-image)
