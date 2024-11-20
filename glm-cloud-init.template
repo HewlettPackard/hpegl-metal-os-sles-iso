@@ -1,5 +1,5 @@
 #cloud-config
-# (C) Copyright 2021-2022 Hewlett Packard Enterprise Development LP
+# (C) Copyright 2021-2024 Hewlett Packard Enterprise Development LP
 merge_how:
   - name:     list
     settings: [append]
@@ -18,6 +18,10 @@ manage_etc_hosts: true
 # ----------------------------------------------------
 users:
   - name: root
+    # Reference: https://cloudinit.readthedocs.io/en/latest/reference/examples.html
+    #   lock_passwd: Defaults to true. Lock the password to disable password login.
+    #   Set it to false to unlock the password (for root login at the serial console).
+    lock_passwd: false
 {{- if .SSHKeys }}
     ssh_authorized_keys:
   {{- range $key := .SSHKeys}}
@@ -32,6 +36,17 @@ users:
 {{- $no_proxy := "" }}
 {{- $ntp := ""}}
 {{- range .Connections }}
+  {{- if gt .UntaggedNet.VID 0 }}
+    {{- range .UntaggedNet.Ranges }}
+      {{- if  .Proxy }}
+        {{- $proxy = .Proxy }}
+        {{- $no_proxy = .NoProxy }}
+      {{- end}}
+      {{- if .NTP}}
+        {{- $ntp = .NTP}}
+      {{- end}}
+    {{- end}}
+  {{- end}}
   {{- range .Networks }}
     {{- range .Ranges }}
       {{- if  .Proxy }}
@@ -63,6 +78,34 @@ write_files:
         ExecStart=/usr/bin/node_exporter $ARGS
         [Install]
         WantedBy=multi-user.target
+  {{- if .VolumeAttachments}}
+  - path: /etc/systemd/system/iscsi_setup.service
+    owner: root
+    permissions: '0644'
+    content: |
+        [Unit]
+        Description=iSCSI Setup
+        [Service]
+        ExecStart=/etc/sysconfig/iscsi-setup.sh
+        [Install]
+        WantedBy=multi-user.target
+  - path: /etc/sysconfig/iscsi-setup.sh
+    owner: root
+    permissions: '0775'
+    content: |
+        #!/bin/bash
+        # script to sequence the startup of iscsi storage:
+        # * for each iSCSI discovery address:
+  {{- range $da := .ISCSIDiscoveryAddressesV3}}
+        #   * make sure we can ping the iSCSI discovery address
+        for i in {1..300}; do if ping -c 1 {{$da }}; then break; fi; sleep 1; date; done
+        #   * iscsiadm --mode discovery -t sendtargets  -p <iSCSI discovery address>
+        iscsiadm --mode discovery -t sendtargets  -p "{{$da }}"
+  {{- end}}
+  {{- if .ISCSIDiscoveryAddressesV3}}
+        iscsiadm --mode node --login
+  {{- end}}
+  {{- end}}
   {{- if  .InitiatorName}}
   - path: /etc/iscsi/initiatorname.iscsi
     owner: root
@@ -105,32 +148,32 @@ network:
     # single interface
     {{- $iface := index .Interfaces 0}}
     - type: physical
-      name: {{$iface.Name}}
+      name: b{{$iface.Name}}
       mac_address: {{$iface.HWAddr}}
       {{- $vlan_parent = $iface.Name}}
   {{- else}}
     # multiple interfaces that are bonded
     {{- range .Interfaces}}
     - type: physical
-      name: {{.Name}}
+      name: b{{.Name}}
       mac_address: {{.HWAddr}}
     {{- end}}
     - type: bond
-      name: {{.Name}}
+      name: b{{.Name}}
       bond_interfaces:
       {{- range .Interfaces}}
-      -  {{.Name}}
+      -  b{{.Name}}
       {{- end}}
       params:
-          bond-mode: 2
+          # Reference: https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/8/html/configuring_and_managing_networking/configuring-network-bonding_configuring-and-managing-networking#configuring-network-bonding_configuring-and-managing-networking
+          # set bonding mode = mode 5 (balance-tlb)
+          bond-mode: balance-tlb
           bond-miimon: 100
           bond-xmit_hash_policy: 2
       {{- $vlan_parent = .Name}}
   {{- end}}
-
-  {{- if eq (len .Networks) 1 }}
-      # single network
-      {{- $net_zero := index .Networks 0 }}
+  {{- if gt .UntaggedNet.VID 0 }}
+      {{- $net_zero := .UntaggedNet }}
       {{- $range_zero := index $net_zero.Ranges 0 }}
       subnets:
       - type: static
@@ -142,14 +185,20 @@ network:
           - {{.}}
           {{- end}}
         {{- end}}
+        {{- if $range_zero.DNSSearchDomains}}
+        dns_search:
+          {{- range $range_zero.DNSSearchDomains}}
+          - {{.}}
+          {{- end}}
+        {{- end}}
   {{- end }}
-  {{- if gt (len .Networks) 1 }}
+  {{- if gt (len .Networks) 0 }}
 
     # multiple networks with vlans
     {{- range .Networks}}
     - type: vlan
-      name: {{$vlan_parent}}.{{.VID}}
-      vlan_link:  {{$vlan_parent}}
+      name: b{{$vlan_parent}}.{{.VID}}
+      vlan_link:  b{{$vlan_parent}}
       vlan_id: {{.VID}}
       {{- $range_zero := index .Ranges 0}}
       subnets:
@@ -159,6 +208,12 @@ network:
         {{- if $range_zero.DNS}}
         dns_nameservers:
           {{- range $range_zero.DNS}}
+          - {{.}}
+          {{- end}}
+        {{- end}}
+        {{- if $range_zero.DNSSearchDomains}}
+        dns_search:
+          {{- range $range_zero.DNSSearchDomains}}
           - {{.}}
           {{- end}}
         {{- end}}
@@ -180,10 +235,7 @@ ntp:
 {{- end}}
 
 runcmd:
-  - systemctl daemon-reload
-  - systemctl enable node_exporter
-  - systemctl start node_exporter
-{{ if .Connections}}
+{{- if .Connections}}
 # DNS configuration for SLES images:
 #  SLES images seem to have trouble setting up a DNS
 #  resolver configuration (/etc/resolv.conf) based
@@ -193,21 +245,31 @@ runcmd:
 #   https://bugs.launchpad.net/cloud-init/+bug/1849296
 # ----------------------------------------------------
   {{- range .Connections}}
-  {{- if eq (len .Networks) 1 }}
-      {{- $net_zero := index .Networks 0 }}
+  {{- if gt .UntaggedNet.VID 0 }}
+      {{- $net_zero := index .UntaggedNet }}
       {{- $range_zero := index $net_zero.Ranges 0 }}
         {{- if $range_zero.DNS}}
           {{- range $range_zero.DNS}}
   - sed -i "s/NETCONFIG_DNS_STATIC_SERVERS=\"/NETCONFIG_DNS_STATIC_SERVERS=\" {{.}} /" /etc/sysconfig/network/config
           {{- end}}
         {{- end}}
+        {{- if $range_zero.DNSSearchDomains}}
+          {{- range $range_zero.DNSSearchDomains}}
+  - sed -i "s/NETCONFIG_DNS_STATIC_SEARCHLIST=\"/NETCONFIG_DNS_STATIC_SEARCHLIST=\" {{.}} /" /etc/sysconfig/network/config
+          {{- end}}
+        {{- end}}
   {{- end }}
-  {{- if gt (len .Networks) 1 }}
+  {{- if gt (len .Networks) 0 }}
     {{- range .Networks}}
       {{- $range_zero := index .Ranges 0}}
         {{- if $range_zero.DNS}}
           {{- range $range_zero.DNS}}
   - sed -i "s/NETCONFIG_DNS_STATIC_SERVERS=\"/NETCONFIG_DNS_STATIC_SERVERS=\" {{.}} /" /etc/sysconfig/network/config
+          {{- end}}
+        {{- end}}
+        {{- if $range_zero.DNSSearchDomains}}
+          {{- range $range_zero.DNSSearchDomains}}
+  - sed -i "s/NETCONFIG_DNS_STATIC_SEARCHLIST=\"/NETCONFIG_DNS_STATIC_SEARCHLIST=\" {{.}} /" /etc/sysconfig/network/config
           {{- end}}
         {{- end}}
       {{- end}}
@@ -217,17 +279,19 @@ runcmd:
   - sed -i "s/FIREWALL=\"yes\"/FIREWALL=\"no\"/" /etc/sysconfig/network/config
   - netconfig update -f
 {{- end}}    {{/* end if .Connections */}}
-{{- if .VolumeAttachments}}
+  - firewall-cmd --permanent --zone=public --add-port=45678/tcp
+  - firewall-cmd --reload
+  - systemctl daemon-reload
+  - systemctl enable node_exporter
+  - systemctl start node_exporter
   # iSCSI Volume attachments
   # ----------------------------------------------------
-  # systemctl disable iscsid.socket
-  # systemctl stop iscsid.socket
+  # This requires host to create with a Volume attached and will setup multipathd to create dm device for it
+  # Once host is up, Metal can add additional volume attachments and user will need to do "iscsiadm -m session --rescan"
+  # and new dm device will be created.
   - systemctl enable iscsid
   - systemctl start iscsid
-  - iscsiadm --mode discovery -t sendtargets  -p "{{.ISCSIDiscoveryAddress  }}"
-  - iscsiadm --mode node --login
-  {{- range .VolumeAttachments}}
-  - iscsiadm --mode node --targetname "{{.TargetIQN}}" -p "{{.IPAddress}}" --op=update --name node.startup -v automatic
-  - iscsiadm --mode node --targetname "{{.TargetIQN}}" -p "{{.IPAddress}}" --login
-  {{- end}}
+{{- if .VolumeAttachments}}
+  - systemctl enable iscsi_setup
+  - systemctl start iscsi_setup
 {{- end}}

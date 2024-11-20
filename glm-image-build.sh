@@ -74,10 +74,6 @@ fi
 ID=$RANDOM
 YYYYMMDD=$(date '+%Y%m%d')
 
-# get the SLES version string from the SLES .ISO file
-SLES_ISO_LABEL=$(isoinfo -d -i $INPUT_ISO_FILENAME |& grep "^Volume id:" | sed -e "s/Volume id: //")
-echo "SLES version string found in $INPUT_ISO_FILENAME is $SLES_ISO_LABEL"
-
 UEFI_CFG_FILE=EFI/BOOT/grub.cfg
 
 xorriso -osirrox on -indev $INPUT_ISO_FILENAME -extract ${UEFI_CFG_FILE} ${UEFI_CFG_FILE}
