@@ -1,4 +1,4 @@
-<!-- (C) Copyright 2022 Hewlett Packard Enterprise Development LP -->
+<!-- (C) Copyright 2022,2024-2025 Hewlett Packard Enterprise Development LP -->
 
 # SLES Bring Your Own Image (BYOI) for GreenLake Metal (GLM)
 # Table of contents
@@ -12,15 +12,56 @@ This github repository contains the script/template files and
 documentation for creating a SLES service for HPE GreenLake Metal
 (GLM) from a SLES install .ISO file.
 
+**Prerequisites:**
+```
+1. You will need a Web Server with HTTPS support for storage of the HPE Bare Metal images.
+2. The Web Server is anything that:
+    A. you have the ability to upload large OS image (.iso) to, and
+    B. is on a network that will be reachable from the HPE On-Premises Controller.
+       When an OS image service (.yml) is used to create an HPE Bare Metal Host, the HPE Bare Metal
+       OS image (.iso) will be downloaded via the `secure_url` mentioned in the service file (.yml).
+3. IMPORTANT:
+   The test `glm-test-service-image.sh` script is to verify the HPE Bare Metal OS image (.iso).
+   To run this test, edit the file `./glm-build-image-and-service.sh` to set the required
+   Web Server-related parameters, listed below:
+      +----------------------------------------------------------------------------
+      | +--------------------------------------------------------------------------
+      | | File `./glm-build-image-and-service.sh`
+      | |   <1> WEB_SERVER_IP: IP address of web server to transfer ISO to (via SSH)
+      | |       Example: WEB_SERVER_IP="10.152.3.96"
+      | |   <2> REMOTE_PATH:   Path on web server to copy files to
+      | |       Example: REMOTE_PATH="/var/www/images/"
+      | |   <3> SSH_USER:      Username for SSH transfer
+      | |       Example: SSH_USER_NAME="root"
+      | | Note: Add your Linux test machine's SSH key to the Web Server
+      | +--------------------------------------------------------------------------
+      +----------------------------------------------------------------------------
+   In this document, for the manual build example:
+   A. a local Web Server "https://10.152.3.96" is used for the storage of OS images (.iso).
+   B. we are assuming that the HPE Bare Metal OS images will be kept in: https://10.152.3.96/images/<.iso>
+4. Linux machine for building OS image:
+   A. Image building has been successfully tested with the following list of Ubuntu OS and its LTS versions:
+      Ubuntu 20.04.6 LTS (focal)
+      Ubuntu 22.04.5 LTS (jammy)
+      Ubuntu 24.04.1 LTS (noble)
+   B. Install supporting tools (git, xorriso, isomd5sum, figlet, and cowsay)
+```
+
 # Building the SLES image
 
-These are the high level steps required to generate the SLES service:
-* Setup Linux system
-* Downloading recipe repo from github
-* Downloading a SLES .ISO file
-* Build the GLM SLES image/service
+These are the high-level steps required to generate the SLES service:
+* Set up a Linux system with 20-40GB of free file system space for the build
+* Set up a local file transfer/storage tool (E.g. **Local Web Server with HTTPS support**) that Bare Metal can reach over the network.
+  * For **unsecured Web Server access**, please refer to the [Hosting](Hosting.md) for additional requirements, listed below:
+    *  A. **HTTPS** with certificates signed by **publicly trusted Certificate authority**, and
+    *  B. **Skip** the host’s **SSL certificate verification**.
+  * For **Web Server running behind the Firewall**, the Web Server IP address and Port has to be whitelisted in the **rules** and **Proxy**.
+* Install Git Version Control (git) and other supporting tools (xorriso, isomd5sum, figlet, and cowsay)
+* Downloading recipe repo from GitHub
+* Download a SLES .ISO file
+* Build the Bare Metal SLES image/service
 
-These are the high level steps required to use this built GLM SLES
+These are the high-level steps required to use this built GLM SLES
 service/image on GLM:
 * Copy the built GLM SLES .ISO image to your web server
 * Add the GLM SLES .YML service file to the appropriate GLM portal
@@ -57,14 +98,14 @@ Once you have an appropriate Linux environment setup, then download
 this recipe from github for building HPE GLM SLES by:
 
 ```
-git clone https://github.com/hpe-hcss/bmaas-byoi-sles-image.git
+git clone https://github.com/hpe-hcss/bmaas-byoi-sles-build.git
 ```
 
 ## Downloading a SLES .ISO file
 
 Next you will need to manually download the appropriate SLES .ISO onto
 the Linux system.  If you don't already have a source for the SLES
-.ISO files, then you might want to sign for a FREE SUSE
+.ISO files, then you might want to sign up for a FREE SUSE
 account at https://www.suse.com/download/sles/.
 
 This SLES tested is working for SLES 15 SP3 and SP4. Note, the "Full" version of
@@ -106,33 +147,49 @@ So you can run the build with the following command line parameters:
     -s <glm-yml-service-file>
 ```
 
-Here is an example of running the built:
+Example: Run the build including artifact verification
 
 ```
 ./glm-build-image-and-service.sh \
    -i SLE-15-SP3-Full-x86_64-GM-Media1.iso \
    -v 15SP3 \
-   -p http://192.169.1.131 \
+   -r qPassw0rd \
+   -p https://10.152.3.96 \
    -o glm-metal-sles.iso
    -s glm-metal-sles-service.yml
+```
+Example: Run the build excluding artifact verification
+
+```
+./glm-build-image-and-service.sh \
+   -i SLE-15-SP3-Full-x86_64-GM-Media1.iso \
+   -v 15SP3 \
+   -r qPassw0rd \
+   -p https://10.152.3.96 \
+   -o glm-metal-sles.iso
+   -s glm-metal-sles-service.yml
+   -x true
 ```
 
 At the end of script run, it will output the following instructions for next steps:
 ```
 +------------------------------------------------------------------------------------------
 | +----------------------------------------------------------------------------------------
-| | This build has generated a new GreenLake Metal (GLM) SLES service/image
+| | This build has generated a new HPE Bare Metal SLES service/image
 | | that consists of the following 2 new files:
-| |     glm-metal-sles.iso
-| |     glm-metal-sles-service.yml
+| |     images/SLE-15-SP4-Full-x86_64-GM-GLM.iso
+| |     images/SLE-15-SP4-Full-x86_64-GM-GLM.yml
 | |
-| | To use this new GLM SLES service/image in HPE GLM take the following steps:
-| | (1) Copy the new .ISO file (glm-metal-sles.iso) to your web server (http://192.169.1.131)
-| |     such that the file can be downloaded from the following URL:
-| |     http://192.169.1.131/glm-metal-sles.iso
-| | (2) Add the GreenLake Metal Service file to your GLM Portal using this command:
-| |     qctl services create -f glm-metal-sles-service.yml
-| | (3) Create a host in GLM using this OS image service.
+| | To use this new Bare Metal SLES service/image in Bare Metal, take the following steps:
+| | (1) Copy the new .ISO file (images/SLE-15-SP4-Full-x86_64-GM-GLM.iso)
+| |     to your web server (https://10.152.3.96) such that the file can be downloaded
+| |     from the following URL: https://10.152.3.96/images/SLE-15-SP4-Full-x86_64-GM-GLM.iso
+| | (2) Add the Bare Metal Service file (images/SLE-15-SP4-Full-x86_64-GM-GLM.yml) to the HPE Bare Metal Portal
+| |     (https://client.greenlake.hpe.com/). To add the HPE Metal Service file,
+| |     sign in to the Bare Metal Portal and select the Tenant by clicking "Go to tenant".
+| |     Select the Dashboard tile "Metal Consumption" and click on the Tab "OS/application images".
+| |     Click on the button "Add OS/application image" to Upload the OS/application YML file.
+| | (3) Create a Bare Metal host using this OS image service.
 | +----------------------------------------------------------------------------------------
 +------------------------------------------------------------------------------------------
 ```
@@ -164,7 +221,7 @@ glm-build-image-and-service.sh command line options | Description
 -i \<sles-iso-filename\>     | local filename of the Full SLES .ISO file that was already downloaded. Used as input file.
 -v \<sles-version-number\>   | a xy SLES version number.  Example: -v 15SP3
 -o \<glm-custom-sles-iso\>   | local filename of the GLM-modified SLES .ISO file that will be output by the script.  This file should be uploaded to your web server.
--p \<image-url-prefix\>      | the beginning of the image URL (on your web server). Example: -p http://192.168.1.131.  The GLM service .YML will assume that the image file will be available at a URL constructed with \<image-url-prefix\>/\<glm-custom-sles-iso\>.
+-p \<image-url-prefix\>      | the beginning of the image URL (on your web server). Example: -p https://10.152.3.96.  The GLM service .YML will assume that the image file will be available at a URL constructed with \<image-url-prefix\>/\<glm-custom-sles-iso\>.
 -s \<glm-yml-service-file\>  | local filename of the GLM .YML service file that will be output by the script.  This file should be uploaded to the GLM portal.
 
 NOTE: The users of this script are expected to copy the
@@ -254,11 +311,13 @@ glm-build-image-and-service.sh | This is the top level build script that will ta
 glm-image-build.sh | This script will repack SLES .ISO file for a GLM SLES install service that uses Virtual Media to get the install started.
 glm-service-build.sh | This script generates a GreenLake Metal OS service.yml file appropriate for uploading the service to a GLM portal(s).
 glm-service-cloud-init.template | This is the cloud-init template file that GLM will use to setup cloud-init to run on the 1st boot.
-glm-service-ks-hostdef.cfg.template | A SLES autoinst file (templated with hostdef-v1) that is included into the core autoinst file.
+glm-service-ks-hostdef.cfg.template | A SLES autoinst file (templated with hostdef-v[latest]) that is included into the core autoinst file.
 glm-service-ks-install-env.cfg.template | The core SLES autoinst file (templated with install-env-v1)
 glm-service-sles-service.yml.template | This is the GLM .YML service file template.
+glm-test-service-image.sh | This script will verify that the OS image referred to in a corresponding Bare Metal OS service .yml is correct.
+Hosting.md | This file is for additional requirements on the web server.
 
-Feel free to modify these file to suite your specifc needs.  General
+Feel free to modify these file to suit your specifc needs.  General
 changes that you want to contribute back via a pull request are much
 appreciated.
 
@@ -280,7 +339,7 @@ The SLES install is driven by the primary autoinst file that is saved as glm-aut
 </packages>
 ```
 
-Feel free to additional packages to list (as long as the packages are on the SLES .ISO).
+Feel free to add additional packages to list (as long as the packages are on the SLES .ISO).
 
 Additional package can also be added when cloud-init runs if you
 prefer that.
@@ -301,18 +360,21 @@ portal.  For example:
 ```
 +------------------------------------------------------------------------------------------
 | +----------------------------------------------------------------------------------------
-| | This build has generated a new GreenLake Metal (GLM) SLES service/image
+| | This build has generated a new HPE Bare Metal SLES service/image
 | | that consists of the following 2 new files:
-| |     glm-metal-sles.iso
-| |     glm-metal-sles-service.yml
+| |     images/SLE-15-SP4-Full-x86_64-GM-GLM.iso
+| |     images/SLE-15-SP4-Full-x86_64-GM-GLM.yml
 | |
-| | To use this new GLM SLES service/image in HPE GLM take the following steps:
-| | (1) Copy the new .ISO file (glm-metal-sles.iso) to your web server (http://192.169.1.131)
-| |     such that the file can be downloaded from the following URL:
-| |     http://192.169.1.131/glm-metal-sles.iso
-| | (2) Add the GreenLake Metal Service file to your GLM Portal using this command:
-| |     qctl services create -f glm-metal-sles-service.yml
-| | (3) Create a host in GLM using this OS image service.
+| | To use this new Bare Metal SLES service/image in Bare Metal, take the following steps:
+| | (1) Copy the new .ISO file (images/SLE-15-SP4-Full-x86_64-GM-GLM.iso)
+| |     to your web server (https://10.152.3.96) such that the file can be downloaded
+| |     from the following URL: https://10.152.3.96/images/SLE-15-SP4-Full-x86_64-GM-GLM.iso
+| | (2) Add the Bare Metal Service file (images/SLE-15-SP4-Full-x86_64-GM-GLM.yml) to the HPE Bare Metal Portal
+| |     (https://client.greenlake.hpe.com/). To add the HPE Metal Service file,
+| |     sign in to the Bare Metal Portal and select the Tenant by clicking "Go to tenant".
+| |     Select the Dashboard tile "Metal Consumption" and click on the Tab "OS/application images".
+| |     Click on the button "Add OS/application image" to Upload the OS/application YML file.
+| | (3) Create a Bare Metal host using this OS image service.
 | +----------------------------------------------------------------------------------------
 +------------------------------------------------------------------------------------------
 ```
@@ -330,7 +392,7 @@ Here are some points to note:
   * This image/service is setup to output to the serial console during
     SLES deployment and watching the serial console is the easiest way
     to monitor the SLES deployment/installation.
-  * HPE GreeLake Metal tools do not monitor the serial port(s) at this
+  * HPE GreenLake Metal tools do not monitor the serial port(s) at this
     time so if an error is generated by the SLES installer, the GLM
     tools will not know about it.
   * Sometimes for more difficult OS deployment problems you might want
@@ -408,10 +470,3 @@ volume should be automatcally setup, for example:
 [7:0:0:0]    disk    Nimble   Server           1.0   /dev/sdb
 [root@host ~]#
 ```
-
-### Prometheus node_exporter
-
-These instructions also add Prometheus node_exporter to the running system.
-Node_exporter is needed for GL Metal to collect telemetry information about
-running Compute Instances for uptime calculation. If node_exporter is not running
-on the Compute Instance, then GL Metal will not be able to calculate uptime for it.
