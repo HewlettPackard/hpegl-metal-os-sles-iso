@@ -403,8 +403,7 @@
       <package>golang-github-prometheus-node_exporter</package>
       <!-- Need cloud-init for first-boot configuration -->
       <package>cloud-init</package>
-      <!-- Need iSCSI related packages-->
-      <package>open-iscsi</package>
+      <!-- Need multipath for iSCSI -->
       <package>multipath-tools</package>
     </packages>
     <patterns t="list">
@@ -446,7 +445,6 @@
     <user t="map">
       <authorized_keys t="list"/>
       <encrypted t="boolean">true</encrypted>
-      <user_password>%ROOTPW%</user_password>
       <fullname>root</fullname>
       <gid>0</gid>
       <home>/root</home>
@@ -461,6 +459,7 @@
       </password_settings>
       <shell>/bin/bash</shell>
       <uid>0</uid>
+      <user_password>$6$bFPLKRB7r8BgV0Vz$Jq.dBr9TdpfQYAnwuvIH7VhoUSSv/94MS6HKX03/CrYuXI92WKc/t96twOs2lIl.TJN.ylpwEXHxqUBfg/SIw/</user_password>
       <username>root</username>
     </user>
   </users>
@@ -545,36 +544,16 @@
         <interpreter>shell</interpreter>
         <source>
           <![CDATA[
-            # sshd configurations for Quake use of ssh keys and not login passwords
-            sed -i "s|#HostKey /etc/ssh/ssh_host_rsa_key|HostKey /etc/ssh/ssh_host_rsa_key|" /mnt/etc/ssh/sshd_config
-            sed -i "s|#HostKey /etc/ssh/ssh_host_ecdsa_key|HostKey /etc/ssh/ssh_host_ecdsa_key|" /mnt/etc/ssh/sshd_config
-            sed -i "s|#HostKey /etc/ssh/ssh_host_ed25519_key|HostKey /etc/ssh/ssh_host_ed25519_key|" /mnt/etc/ssh/sshd_config
-            sed -i "s/^.*PermitRootLogin.*$/PermitRootLogin without-password/" /mnt/etc/ssh/sshd_config
-            sed -i "s/^.*PasswordAuthentication.*$/PasswordAuthentication no/" /mnt/etc/ssh/sshd_config
-            sed -i "s/#ChallengeResponseAuthentication yes/ChallengeResponseAuthentication no/" /mnt/etc/ssh/sshd_config
-            sed -i "s/#GSSAPIAuthentication no/GSSAPIAuthentication no/" /mnt/etc/ssh/sshd_config
+            # Configure cloud-init for GLM server configuration
+            echo "datasource_list: [\"None\"]" >> /mnt/etc/cloud/cloud.cfg
+
+            # disable password login over SSH (make PasswordAuthentication options 'no')
+            grep -q ^PasswordAuthentication /mnt/etc/ssh/sshd_config && \
+                sed -i "s/^PasswordAuthentication.*$/PasswordAuthentication no/" /mnt/etc/ssh/sshd_config || \
+                echo "PasswordAuthentication no" >> /mnt/etc/ssh/sshd_config
 
             # enable root password login from the GreenLake Metal console/serial port
             echo ttyS1 >> /mnt/etc/securetty
-
-            # enable cloud-init to setup root login via ssh
-            sed -i 's/disable_root:.*$/disable_root: false/' /mnt/etc/cloud/cloud.cfg
-
-            # create multipath.conf
-            cat << EOF > /mnt/etc/multipath.conf
-blacklist {
-   devnode "^(ram|raw|loop|fd|md|dm-|sr|scd|st)[0-9]*"
-   devnode "^nvme[0-9]"
-   devnode "^hd[a-z][0-9]*"
-   protocol "scsi:unspec"
-}
-EOF
-            # enable use of the GreenLake Metal console/serial port(s)
-            echo ttyS0 >> /mnt/etc/securetty
-            echo ttyS1 >> /mnt/etc/securetty
-
-            # Configure cloud-init for GLM server configuration
-            echo "datasource_list: [\"None\"]" >> /mnt/etc/cloud/cloud.cfg
 
             # Copy the cloud-init config files over
             cp /tmp/92_DATASOURCE.CFG /mnt/etc/cloud/cloud.cfg.d/92_datasource.cfg
@@ -589,17 +568,11 @@ EOF
         <interpreter>shell</interpreter>
         <source>
           <![CDATA[
-            # enable SSH daemon
-            systemctl enable sshd
-
-            # enable cloud-init
+            # Now we should enable the cloud-init services
             systemctl enable cloud-init-local
             systemctl enable cloud-init
             systemctl enable cloud-config
             systemctl enable cloud-final
-
-            # enable multipathd
-            systemctl enable multipathd
           ]]>
         </source>
       </script>
