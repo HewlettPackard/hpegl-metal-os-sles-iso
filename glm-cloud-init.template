@@ -172,7 +172,7 @@ network:
           bond-xmit_hash_policy: 2
       {{- $vlan_parent = .Name}}
   {{- end}}
-  {{- if gt .UntaggedNet.VID 0 }}
+  {{- if and (gt .UntaggedNet.VID 0) (eq .UntaggedNet.NoIPAddr false) }}
       {{- $net_zero := .UntaggedNet }}
       {{- $range_zero := index $net_zero.Ranges 0 }}
       subnets:
@@ -200,6 +200,7 @@ network:
       name: b{{$vlan_parent}}.{{.VID}}
       vlan_link:  b{{$vlan_parent}}
       vlan_id: {{.VID}}
+      {{- if eq .NoIPAddr false }}
       {{- $range_zero := index .Ranges 0}}
       subnets:
       - type: static
@@ -217,6 +218,7 @@ network:
           - {{.}}
           {{- end}}
         {{- end}}
+      {{- end}}
       {{- end}}
   {{- end}}
   {{- end}}  {{/* range .Connections  */}}
@@ -245,7 +247,7 @@ runcmd:
 #   https://bugs.launchpad.net/cloud-init/+bug/1849296
 # ----------------------------------------------------
   {{- range .Connections}}
-  {{- if gt .UntaggedNet.VID 0 }}
+  {{- if and (gt .UntaggedNet.VID 0) (eq .UntaggedNet.NoIPAddr false) }}
       {{- $net_zero := index .UntaggedNet }}
       {{- $range_zero := index $net_zero.Ranges 0 }}
         {{- if $range_zero.DNS}}
@@ -261,6 +263,7 @@ runcmd:
   {{- end }}
   {{- if gt (len .Networks) 0 }}
     {{- range .Networks}}
+      {{- if eq .NoIPAddr false }}
       {{- $range_zero := index .Ranges 0}}
         {{- if $range_zero.DNS}}
           {{- range $range_zero.DNS}}
@@ -272,6 +275,7 @@ runcmd:
   - sed -i "s/NETCONFIG_DNS_STATIC_SEARCHLIST=\"/NETCONFIG_DNS_STATIC_SEARCHLIST=\" {{.}} /" /etc/sysconfig/network/config
           {{- end}}
         {{- end}}
+      {{- end}}
       {{- end}}
   {{- end}}
   {{- end}}  {{/* range .Connections  */}}
