@@ -8,9 +8,24 @@
 
 # Overview
 
-This github repository contains the script/template files and
-documentation for creating a SLES service for HPE GreenLake Metal
-(GLM) from a SLES install .ISO file.
+This GitHub repository includes scripts, template files, and documentation for creating a SLES service for HPE GreenLake Metal (GLM) using a SLES installation .ISO file.
+
+# Supported HPE PCE Bare Metal Operating Systems
+
+Service Category | Service Flavor    | Service Version 
+---------------- | ----------------- | --------------------------------------------
+Linux            | SLES              | SLES 15 SP3, SLES 15 SP4
+
+
+# Supported Network Bonding Configuration for HPE PCE Bare Metal
+This section provides the BMaaS OS configurations for SLES, outlining Switch LAG (Link Aggregation Group) settings along with bonding modes and key configuration parameters.<BR><BR>
+**Additional Reference:** For a detailed overview of bonding modes and the required switch settings, please refer to the official [SLES 15 SP4 Networking info]([https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/configuring_and_managing_networking/configuring-network-bonding_configuring-and-managing-networking#configuring-network-bonding_configuring-and-managing-networking](https://documentation.suse.com/sles/15-SP4/html/SLES-all/cha-network.html)).
+
+Switch LAG   | Configuration Details |
+------------ | --------------------- |
+**Disabled** <BR> (Default Configuration) | **Configuration Details:** This is the **$${\color{red}default}$$** bonding  mode for the host. <BR><BR> **Behavior:** When the switch LAG is disabled, the bond mode is set to TLB (Transmit Load Balancing). In this mode, only one network port will receive incoming traffic, while all network ports in the bond will participate in transmitting outgoing traffic. |
+**Enabled** <BR> (User Configurable)  | **Configuration Details:** When the switch LAG is enabled, the bonding mode **needs to be set manually to Balance XOR**. <BR><BR> **Behavior:** When the switch LAG is enabled and the bond mode is set to XOR, the switch is configured to allow receiving traffic on both network ports. <BR><BR> **Configuration Steps:** <BR> <1> Set `no_switch_lag` to `false` in the **OS Image Service file** ([glm-service.yml.template](glm-service.yml.template)) <BR> <2> In the cloud-init configuration file ([glm-cloud-init.template](glm-cloud-init.template)), update the bonding mode by setting: <BR> `bond-mode: balance-xor`. |
+
 
 **Prerequisites:**
 ```
@@ -61,153 +76,164 @@ These are the high-level steps required to generate the SLES service:
 * Download a SLES .ISO file
 * Build the Bare Metal SLES image/service
 
-These are the high-level steps required to use this built GLM SLES
-service/image on GLM:
+These are the high-level steps required to use this built GLM SLES service/image on GLM:
 * Copy the built GLM SLES .ISO image to your web server
 * Add the GLM SLES .YML service file to the appropriate GLM portal
 * In GLM create a host using this OS image service.
 
 ## Setup Linux system
 
-These instructions and scripts are designed to run on a Linux system.
-These instructions were developed and tested on a Ubuntu 20.04 VM, but
-they should work on other distros/versions. The Linux host will need
-to have the following packages installed for these scripts to run
-correctly:
+These instructions and accompanying scripts are designed to run on a Linux system. They have been developed and tested on an Ubuntu 20.04 virtual machine but should work on other Linux distributions and versions as well.
 
+To ensure proper execution, the Linux host must have the following packages installed:
 * xorriso
 * isomd5sum
 * syslinux-utils
 
-On Ubuntu the necessary packages can be installed with:
-
+On Ubuntu (the build system), you can install these packages by running:
 ```
 sudo apt install xorriso isomd5sum syslinux-utils
 ```
 
-The Linux host must have enough free file system space that images can
-be easily generated (20-40GB).
+Additionally, please ensure that your Linux host has sufficient free disk space - typically between 20 and 40 GB - to comfortably generate the image files.
 
-The resulting SLES .ISO image file from the build needs to be uploaded
-to a web server that the GLM Data Center Controller (DCC) can access
-over the network.  More about this later.
+Once the build completes, the resulting SLES .ISO image must be uploaded to a web server accessible by the GreenLake Metal Data Center Controller (DCC) over the network. Further details on this process will be provided later.
 
 ## Downloading recipe repo from github
 
-Once you have an appropriate Linux environment setup, then download
-this recipe from github for building HPE GLM SLES by:
-
+Once you have your Linux environment properly set up, download this HPE GLM SLES build recipe from GitHub by running:
 ```
-git clone https://github.com/hpe-hcss/bmaas-byoi-sles-build.git
+git clone https://github.com/HewlettPackard/hpegl-metal-os-sles-iso.git
+```
+Change directory to the cloned folder:
+```
+cd hpegl-metal-os-sles-iso
+mkdir images
 ```
 
 ## Downloading a SLES .ISO file
 
-Next you will need to manually download the appropriate SLES .ISO onto
-the Linux system.  If you don't already have a source for the SLES
-.ISO files, then you might want to sign up for a FREE SUSE
-account at https://www.suse.com/download/sles/.
+Next, you will need to manually download the appropriate SLES .ISO file onto your Linux system. If you do not already have access to the SLES .ISO, you can sign up for a free SUSE account at https://www.suse.com/download/sles/.
 
-This SLES tested is working for SLES 15 SP3 and SP4. Note, the "Full" version of
-the ISO is required. The "Online" version will not.
+This setup has been successfully tested with `SLES 15 SP3` and `SLES 15 SP4`.  
+Note: Please ensure you use the "Full" ISO version of the SLES installation media. The "Online" ISO is not supported for this process.
+
+For Example: ISO Image downloaded and copied at `images/SLE-15-SP4-Full-x86_64-GM-Media1.iso`
 
 ## Building the GLM SLES image/service
 
-At this point, you should have a Linux system with:
-* a copy of this repo
+At this stage, you should have the following ready on your Linux system:
+* a local copy of this repository
 * a standard SLES Full .ISO file
 
-We are almost ready to do the build, but we need to know something
-about your environment.  When the build is done, it will generate two
-files:
-* a GLM-modified SLES .ISO file that needs to be hosted on a web
-  server.  It is assumed that you have (or can setup) a local web
-  server that GLM can reach over the network.  You will also need
-  login credentials on this web server so that you can upload files.
-* a GLM service .YML file that will be used to add the SLES service to
-  the GLM portal.  This .YML file will have a URL to the GLM-modified SLES
-  .ISO file on the web server.
+We are nearly ready to proceed with the build, but first, we need some details about your environment. Upon completion, the build will generate two key files:
+* GLM-modified SLES .ISO file: This customized ISO must be hosted on a web server accessible by the GLM portal. You should have, or be able to set up, a local web server reachable over your network, along with the necessary login credentials to upload files.
+* GLM service .YML file: This YAML file is used to add the SLES service to the GLM portal and contains the URL pointing to the GLM-modified SLES .ISO hosted on your web server.
 
-The build needs to know what URL can be used to download the
-GLM-modified SLES .ISO file. We assume that the URL can be broken into
-2 parts: \<image-url-prefix\>/\<glm-custom-sles-iso\>
+To successfully configure the build, you must specify the base URL from which the GLM-modified SLES .ISO will be served. We assume this URL follows the format: `<image-url-prefix>/<glm-custom-sles-iso>`
 
-If the image URL cannot be constructed with this simple mechanism
-then you probably need to customize this script for a more complex URL
-costruction.
+If your image URL cannot be constructed using this straightforward pattern, you may need to customize the script to handle a more complex URL structure.
 
 So you can run the build with the following command line parameters:
-
 ```
 ./glm-build-image-and-service.sh \
     -i <sles-iso-filename> \
     -v <sles-version-number> \
+    -r <root-password> \
     -p <image-url-prefix> \
     -o <glm-custom-sles-iso> \
     -s <glm-yml-service-file>
 ```
 
-Example: Run the build including artifact verification
+Example #1: Running the build with artifact verification
 
 ```
 ./glm-build-image-and-service.sh \
-   -i SLE-15-SP3-Full-x86_64-GM-Media1.iso \
-   -v 15SP3 \
+   -i images/SLE-15-SP4-Full-x86_64-GM-Media1.iso \
+   -v SLE-15-SP4 \
    -r qPassw0rd \
    -p https://10.152.3.96 \
-   -o glm-metal-sles.iso
-   -s glm-metal-sles-service.yml
-```
-Example: Run the build excluding artifact verification
-
-```
-./glm-build-image-and-service.sh \
-   -i SLE-15-SP3-Full-x86_64-GM-Media1.iso \
-   -v 15SP3 \
-   -r qPassw0rd \
-   -p https://10.152.3.96 \
-   -o glm-metal-sles.iso
-   -s glm-metal-sles-service.yml
-   -x true
+   -o images/SLE-15-SP4-Full-x86_64-GM-GLM.iso \
+   -s images/SLE-15-SP4-Full-x86_64-GM-GLM.yml
 ```
 
-At the end of script run, it will output the following instructions for next steps:
+At the end of the script execution, it will display instructions for the next steps, such as:
 ```
 +------------------------------------------------------------------------------------------
 | +----------------------------------------------------------------------------------------
-| | This build has generated a new HPE Bare Metal SLES service/image
+| | This build has generated a new HPE Bare Metal SLE-15-SP4 service/image
 | | that consists of the following 2 new files:
 | |     images/SLE-15-SP4-Full-x86_64-GM-GLM.iso
 | |     images/SLE-15-SP4-Full-x86_64-GM-GLM.yml
 | |
-| | To use this new Bare Metal SLES service/image in Bare Metal, take the following steps:
+| | To use this new Bare Metal SLE-15-SP4 service/image in Bare Metal, take the following steps:
 | | (1) Copy the new .ISO file (images/SLE-15-SP4-Full-x86_64-GM-GLM.iso)
 | |     to your web server (https://10.152.3.96) such that the file can be downloaded
 | |     from the following URL: https://10.152.3.96/images/SLE-15-SP4-Full-x86_64-GM-GLM.iso
+| |
 | | (2) Add the Bare Metal Service file (images/SLE-15-SP4-Full-x86_64-GM-GLM.yml) to the HPE Bare Metal Portal
 | |     (https://client.greenlake.hpe.com/). To add the HPE Metal Service file,
 | |     sign in to the Bare Metal Portal and select the Tenant by clicking "Go to tenant".
 | |     Select the Dashboard tile "Metal Consumption" and click on the Tab "OS/application images".
 | |     Click on the button "Add OS/application image" to Upload the OS/application YML file.
+| |
+| | (3) Create a Bare Metal host using this OS image service.
+| +----------------------------------------------------------------------------------------
++------------------------------------------------------------------------------------------
+```
+Example #2: Running the build without artifact verification
+
+```
+./glm-build-image-and-service.sh \
+   -i images/SLE-15-SP4-Full-x86_64-GM-Media1.iso \
+   -v SLE-15-SP4 \
+   -r qPassw0rd \
+   -p https://10.152.3.96 \
+   -o images/SLE-15-SP4-Full-x86_64-GM-GLM.iso \
+   -s images/SLE-15-SP4-Full-x86_64-GM-GLM.yml
+   -x true
+```
+
+At the end of the script execution, it will display instructions for the next steps, such as:
+```
++------------------------------------------------------------------------------------------
+| +----------------------------------------------------------------------------------------
+| | This build has generated a new HPE Bare Metal SLE-15-SP4 service/image
+| | that consists of the following 2 new files:
+| |     images/SLE-15-SP4-Full-x86_64-GM-GLM.iso
+| |     images/SLE-15-SP4-Full-x86_64-GM-GLM.yml
+| |
+| | To use this new Bare Metal SLE-15-SP4 service/image in Bare Metal, take the following steps:
+| | (1) Copy the new .ISO file (images/SLE-15-SP4-Full-x86_64-GM-GLM.iso)
+| |     to your web server (https://10.152.3.96) such that the file can be downloaded
+| |     from the following URL: https://10.152.3.96/images/SLE-15-SP4-Full-x86_64-GM-GLM.iso
+| |
+| |     IMPORTANT: Use the test (glm-test-service-image.sh) script to verify that
+| |                the ISO upload was correct, and the size and checksum of the ISO
+| |                match what is defined in the YML.
+| |
+| | (2) Add the Bare Metal Service file (images/SLE-15-SP4-Full-x86_64-GM-GLM.yml) to the HPE Bare Metal Portal
+| |     (https://client.greenlake.hpe.com/). To add the HPE Metal Service file,
+| |     sign in to the Bare Metal Portal and select the Tenant by clicking "Go to tenant".
+| |     Select the Dashboard tile "Metal Consumption" and click on the Tab "OS/application images".
+| |     Click on the button "Add OS/application image" to Upload the OS/application YML file.
+| |
 | | (3) Create a Bare Metal host using this OS image service.
 | +----------------------------------------------------------------------------------------
 +------------------------------------------------------------------------------------------
 ```
 
-When a SLES host is created in the GLM portal, the GLM DCC will pull
-down this GLM-modified SLES .ISO file. This may take a little bit of time
-the first time that DCC downloads the ISO from the web server.
+When a SLES host is created in the GreenLake Metal (GLM) portal, the GLM DCC will automatically download the GLM-customized SLES ISO.  
+Note: The first download may take some time, as the ISO is pulled from the designated web server.
 
 ### glm-build-image-and-service.sh - top level build script
 
-This is the top level build script that will take a SLES install ISO and
-generate a SLES service.yml file that can be imported as a Host
-imaging Service into a GreenLake Metal portal.
+This is the primary build script used to generate a GLM-compatible service.yml from a standard SLES installation ISO. The resulting YAML file can then be imported into the GreenLake Metal portal as a Host Imaging Service.
 
 glm-build-image-and-service.sh does the following steps:
-* process command line arguements.
-* Customize the SLES .ISO so that it works for GLM.  Run: glm-image-build.sh.
-* Generate GLM service file for this GLM image that we just generated. Run: glm-service-build.sh.
+* Parses and validates command-line arguments
+* Customizes the SLES ISO for GLM using glm-image-build.sh
+* Generates the service.yml for the customized image using glm-service-build.sh
 
 glm-build-image-and-service.sh usage:
 
@@ -216,58 +242,62 @@ glm-build-image-and-service.sh -i <sles-iso-filename> -o <glm-custom-sles-iso>
     -v <sles-version-number> -p <image-url-prefix> -s <glm-yml-service-file>
 ```
 
-glm-build-image-and-service.sh command line options | Description
-----------------------------------------------------| -----------
--i \<sles-iso-filename\>     | local filename of the Full SLES .ISO file that was already downloaded. Used as input file.
--v \<sles-version-number\>   | a xy SLES version number.  Example: -v 15SP3
--o \<glm-custom-sles-iso\>   | local filename of the GLM-modified SLES .ISO file that will be output by the script.  This file should be uploaded to your web server.
--p \<image-url-prefix\>      | the beginning of the image URL (on your web server). Example: -p https://10.152.3.96.  The GLM service .YML will assume that the image file will be available at a URL constructed with \<image-url-prefix\>/\<glm-custom-sles-iso\>.
--s \<glm-yml-service-file\>  | local filename of the GLM .YML service file that will be output by the script.  This file should be uploaded to the GLM portal.
+| Option                      | Description                                                                                                                                                                                                                                              |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-i <sles-iso-filename>`    | Path to the **local** SLES Full ISO file that has already been downloaded. This will be used as the input ISO.                                                                                                                                           |
+| `-v <sles-version-number>`  | The **SLES version number**, e.g., `15SP3`.                                                                                                                                                                                                              |
+| `-r <sles-rootpw>`          | The **root user password** in plain text.                                                                                                                                                                                                                |
+| `-o <glm-custom-sles-iso>`  | Output filename for the **GLM-customized SLES ISO**. This ISO should later be uploaded to your web server.                                                                                                                                               |
+| `-p <image-url-prefix>`     | The **base URL** where the ISO will be hosted (e.g., `https://10.152.3.96`). The generated GLM service YAML will reference the image using: `<image-url-prefix>/<glm-custom-sles-iso>`.                                                                  |
+| `-s <glm-yml-service-file>` | Output filename for the **GLM service YAML file**, which should be uploaded to the GLM portal.                                                                                                                                                           |
+| `-x <skip-test>`            | *(Optional)* Set to `true` to **skip validation testing**. <br>**Note:** By default, the script will run [`glm-test-service-image.sh`](glm-test-service-image.sh) to verify the uploaded ISO (size and checksum must match the values in the YAML file). |
 
-NOTE: The users of this script are expected to copy the
-\<glm-custom-sles-iso\> .ISO file to your web server such that the file
-is available at this constructed URL:
-\<image-url-prefix\>/\<glm-custom-sles-iso\>
+Note:  
+Users of this script are expected to manually copy the generated <glm-custom-sles-iso> file to their web server, ensuring it is accessible at the following constructed URL:  \<image-url-prefix\>/\<glm-custom-sles-iso\>
 
 ### glm-image-build.sh - Customize SLES.ISO for GLM
 
-This script will repack a SLES .ISO file for a GLM SLES install service
-that uses Virtual Media to get the install started.
+This script repackages a standard SLES installation ISO to make it compatible with GreenLake Metal (GLM), enabling deployment via Virtual Media (vMedia).
 
-The following changes are being made to the SLES .ISO:
-  1. configure to use an autoinst.xml file on the iLO vmedia
-     floppy and to pull the RPM packages (stage2) over vmedia
-  2. setup for a text based install (versus a GUI install)
-  3. set up the console to the iLO serial port (/dev/ttyS1)
+Key Customizations Made to the ISO:
+  1. Configures the installer to:
+    * Use an autoinst.xml file from the iLO vMedia floppy.
+    * Pull RPM packages (stage2) over vMedia.
+  2. Sets up the installation as text-based, instead of GUI-based.
+  3. Configures the console to use the iLO serial port (/dev/ttyS1).
 
-The SLES .ISO is configured to use a autoinst.xml file on the iLO
-vmedia floppy by adding the 'autoyast=usb:///glm-autoinst.xml' option in
-GRUB (used in UEFI) and isolinux (used in BIOS) configuration
-files. This option configures SLES installer to pull the
-autoinst.xml file from the root of the floppy at /glm-autoinst.xml.  This
-autoinst.xml option is setup by modifying the following files
-on the .ISO:
-  boot/x86_64/loader/isolinux.cfg for BIOS
-  EFI/BOOT/grub.cfg for UEFI
+To enable use of the autoinst.xml file from the vMedia floppy, the ISO is modified to include the following boot option:
+`autoyast=usb:///glm-autoinst.xml`
+This directive instructs the installer to load the AutoYaST configuration file from the root of the floppy device, located at /glm-autoinst.xml.
+
+Bootloader Files Modified:
+* boot/x86_64/loader/isolinux.cfg – for BIOS-based systems
+* EFI/BOOT/grub.cfg – for UEFI-based systems
+These changes ensure both boot modes are supported with the custom autoinstall settings.
 
 Usage:
 ```
-glm-build-image-and-service.sh -i <sles.iso> -v <version> -o <glm-customizied-sles.iso>
+glm-build-image-and-service.sh
+      -i <sles.iso>
+      -v <version>
+      -o <glm-customizied-sles.iso>
 ```
 
-command line options          | Description
------------------------------ | -----------
--i \<sles.iso\>                 | Input SLES .ISO filename
--v \<version\>                  | SLES version number xy
--o \<glm-customizied-sles.iso\> | Output GLM SLES .ISO file
+| Option                         | Description                                                          |
+| ------------------------------ | -------------------------------------------------------------------- |
+| `-i <sles.iso>`                | Path to the input **SLES installation ISO** file.                    |
+| `-v <version>`                 | SLES version identifier (e.g., `15SP3`, `15SP4`).                    |
+| `-o <glm-customized-sles.iso>` | Output filename for the **GLM-customized SLES ISO** to be generated. |
 
-Here are the detailed changes that are made to the SLES .ISO:
-* change the default timeout to 5 seconds (instead of 60 seconds)
-* change the default menu selection to the 1st entry (no media check)
-* add the 'autoyast=...' option to the various lines in the file
-* also setup the serial console to ttyS1 (iLO serial port) with 115200 baud
-* remove the 'splash=silent' option so the user can watch kernel loading
-  and use to triage any problems
+
+**Detailed Modifications Made to the SLES ISO**  
+The following changes are applied to the original SLES ISO during customization:
+* Reduced boot timeout from 60 seconds to 5 seconds for faster unattended startup.
+* Set the default boot menu option to the first entry (skipping the media check).
+* Appended the autoyast=... parameter to the boot configuration to enable automated installation via the vMedia floppy.
+* Configured serial console output to use /dev/ttyS1 (iLO serial port) at 115200 baud, ensuring visibility during headless or remote installs.
+* Removed the splash=silent parameter, allowing full kernel boot messages to display for better visibility and easier troubleshooting.
+
 
 ### glm-service-build.sh - Generate GLM .YML service file
 
@@ -282,17 +312,18 @@ glm-service-build.sh -s <service-template> -o <service_yml_filename>
       -i <local_image_filename> [ -t <os-template> ]
 ```
 
-command line options      | Description
-------------------------- | -----------
--s \<service-template\>     | service template filename (input file)
--o \<service_yml_filename\> | service filename (output file)
--c \<svc_category\>         | GreenLake Metal service category
--f \<scv_flavor\>           | GreenLake Metal service flavor
--v \<svc_ver\>              | GreenLake Metal service version
--d \<display_url\>          | used to display the image URL in user interface
--u \<secure_url\>           | the real URL to the image file
--i \<local_image_filename\> | a full path to the image for this service. Used to get the .ISO sha256sum and size.
-[ -t \<os-template\> ]      | info template files. 1st -t option should be %CONTENT1% in service-template. 2nd -> %CONTENT2%.
+| Command Line Option          | Description                                                                                                                   |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| -s \<service-template>       | Input service template filename                                                                                               |
+| -o \<service\_yml\_filename> | Output service YAML filename                                                                                                  |
+| -c \<svc\_category>          | GreenLake Metal service category                                                                                              |
+| -f \<svc\_flavor>            | GreenLake Metal service flavor                                                                                                |
+| -v \<svc\_ver>               | GreenLake Metal service version                                                                                               |
+| -d \<display\_url>           | URL displayed in the user interface to represent the image                                                                    |
+| -u \<secure\_url>            | Actual URL where the image file is hosted                                                                                     |
+| -i \<local\_image\_filename> | Full path to the local image file, used to calculate the .ISO SHA256 checksum and file size                                   |
+| \[ -t \<os-template> ]       | Optional info template files; the first -t option replaces %CONTENT1% in the service template, the second replaces %CONTENT2% |
+
 
 # Customizing the SLES image
 autoinst
@@ -304,34 +335,31 @@ The SLES image/service can be customized by:
 ## Modifying the way the image is built
 Here is a description of the files in this repo:
 
-Filename     | Description
--------------| -----------
-README.md | This documentation
-glm-build-image-and-service.sh | This is the top level build script that will take a SLES install ISO and generate a SLES service.yml file that can be imported as a Host imaging Service into a GreenLake Metal portal.
-glm-image-build.sh | This script will repack SLES .ISO file for a GLM SLES install service that uses Virtual Media to get the install started.
-glm-service-build.sh | This script generates a GreenLake Metal OS service.yml file appropriate for uploading the service to a GLM portal(s).
-glm-service-cloud-init.template | This is the cloud-init template file that GLM will use to setup cloud-init to run on the 1st boot.
-glm-service-ks-hostdef.cfg.template | A SLES autoinst file (templated with hostdef-v[latest]) that is included into the core autoinst file.
-glm-service-ks-install-env.cfg.template | The core SLES autoinst file (templated with install-env-v1)
-glm-service-sles-service.yml.template | This is the GLM .YML service file template.
-glm-test-service-image.sh | This script will verify that the OS image referred to in a corresponding Bare Metal OS service .yml is correct.
-Hosting.md | This file is for additional requirements on the web server.
+| Filename                                  | Description                                                                                                                           |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `README.md`                               | Overview and usage documentation.                                                                                                     |
+| `glm-build-image-and-service.sh`          | Top-level build script that takes a SLES install ISO and generates a GLM-compatible `service.yml` file for importing into the portal. |
+| `glm-image-build.sh`                      | Repackages the SLES ISO for GreenLake Metal (GLM) deployment using Virtual Media (vMedia).                                            |
+| `glm-service-build.sh`                    | Generates the `service.yml` file required for uploading the OS image as a service in the GLM portal.                                  |
+| `glm-service-cloud-init.template`         | Cloud-init template used by GLM to configure the host on first boot.                                                                  |
+| `glm-service-ks-hostdef.cfg.template`     | Templated SLES `autoinst` fragment for host-specific configuration (`hostdef-vX`).                                                    |
+| `glm-service-ks-install-env.cfg.template` | Core `autoinst` template used during installation (`install-env-v1`).                                                                 |
+| `glm-service-sles-service.yml.template`   | Template for the final GLM service YAML (`.yml`) file.                                                                                |
+| `glm-test-service-image.sh`               | Verifies that the OS image referenced in a GLM `.yml` service file is present, correctly sized, and has the expected checksum.        |
+| `Hosting.md`                              | Contains web server requirements for hosting ISO and service files.                                                                   |
 
-Feel free to modify these file to suit your specifc needs.  General
-changes that you want to contribute back via a pull request are much
-appreciated.
+**Feel free to modify these files to suit your specific needs.**  
+Contributions of general improvements via pull requests are always welcome and appreciated.
 
 *The license for this repo has yet to be determined*.
 
 ## Modifying the SLES autoinst file
 
-The SLES autoinst file is the basis of the automated install of SLES
-supplied by this recipe.  Many additional changes to either of the
-autoinst files are possible to customize to your needs.
+The SLES autoinst file serves as the foundation for the automated SLES installation provided by this recipe. You can further customize the installation by making additional changes to either of the autoinst files to suit your specific requirements.
 
 ## Customizing installed SLES packages (via autoinst)
 
-The SLES install is driven by the primary autoinst file that is saved as glm-autoinst.xml.template in this repo.  In the middle of this file is a package list that looks like this:
+The SLES installation is controlled by the primary autoinst file, saved as glm-autoinst.xml.template in this repository. Within this file, you’ll find a package list section that appears as follows:
 
 ```
 <packages t="list">
@@ -339,108 +367,91 @@ The SLES install is driven by the primary autoinst file that is saved as glm-aut
 </packages>
 ```
 
-Feel free to add additional packages to list (as long as the packages are on the SLES .ISO).
-
-Additional package can also be added when cloud-init runs if you
-prefer that.
+You are welcome to add additional packages to the list, provided they are included on the SLES .ISO.
+Alternatively, you can also add packages during the cloud-init phase after installation, if preferred.
 
 ## Modifying the cloud-init
 
-This service uses cloud-init to customize the deployed image after an autoinst-driven SLES install.
-The cloud-init template is saved in this repo as glm-cloud-init.template.  Customizations of this file are possible.
+This service utilizes cloud-init to customize the deployed image following the autoinst-driven SLES installation.
+The cloud-init template is available in this repository as glm-cloud-init.template, and can be customized to suit your requirements.
 
 # Using the SLES service/image
 
 ## Adding SLES service to GLM portal
 
-When the build script completes successfully you will find the following
-instructions there for how to add this image into your HPE GreenLake Metal
-portal.  For example:
+Upon successful completion of the build script, instructions will be provided on how to add this image to your HPE GreenLake Metal portal. For example:
 
 ```
 +------------------------------------------------------------------------------------------
 | +----------------------------------------------------------------------------------------
-| | This build has generated a new HPE Bare Metal SLES service/image
+| | This build has generated a new HPE Bare Metal SLE-15-SP4 service/image
 | | that consists of the following 2 new files:
 | |     images/SLE-15-SP4-Full-x86_64-GM-GLM.iso
 | |     images/SLE-15-SP4-Full-x86_64-GM-GLM.yml
 | |
-| | To use this new Bare Metal SLES service/image in Bare Metal, take the following steps:
+| | To use this new Bare Metal SLE-15-SP4 service/image in Bare Metal, take the following steps:
 | | (1) Copy the new .ISO file (images/SLE-15-SP4-Full-x86_64-GM-GLM.iso)
 | |     to your web server (https://10.152.3.96) such that the file can be downloaded
 | |     from the following URL: https://10.152.3.96/images/SLE-15-SP4-Full-x86_64-GM-GLM.iso
+| |
+| |     IMPORTANT: Use the test (glm-test-service-image.sh) script to verify that
+| |                the ISO upload was correct, and the size and checksum of the ISO
+| |                match what is defined in the YML.
+| |
 | | (2) Add the Bare Metal Service file (images/SLE-15-SP4-Full-x86_64-GM-GLM.yml) to the HPE Bare Metal Portal
 | |     (https://client.greenlake.hpe.com/). To add the HPE Metal Service file,
 | |     sign in to the Bare Metal Portal and select the Tenant by clicking "Go to tenant".
 | |     Select the Dashboard tile "Metal Consumption" and click on the Tab "OS/application images".
 | |     Click on the button "Add OS/application image" to Upload the OS/application YML file.
+| |
 | | (3) Create a Bare Metal host using this OS image service.
 | +----------------------------------------------------------------------------------------
 +------------------------------------------------------------------------------------------
 ```
-
 Follow the instructions as directed!
+
 
 ## Creating a SLES Host with SLES Service
 
 ### Triage of image deloyment problems
 
-After you have created your custom SLES image/server and created a
-host using this new service, you will want to monitor the deployment
-for the first few times to make sure things are going as expected.
-Here are some points to note:
-  * This image/service is setup to output to the serial console during
-    SLES deployment and watching the serial console is the easiest way
-    to monitor the SLES deployment/installation.
-  * HPE GreenLake Metal tools do not monitor the serial port(s) at this
-    time so if an error is generated by the SLES installer, the GLM
-    tools will not know about it.
-  * Sometimes for more difficult OS deployment problems you might want
-    to gain access to the servers iLO so that you can monitor it that
-    way.  See your GLM administrator.
+Once you’ve created your custom SLES image and deployed a host using this new service, it’s recommended to monitor the deployment process - at least for the first few runs - to ensure everything proceeds as expected.
+
+**Key Points to Keep in Mind:**  
+* This image/service is configured to output to the serial console during the SLES deployment. Monitoring the serial console is the most effective way to track installation progress.
+* HPE GreenLake Metal (GLM) tools currently do not monitor serial port output. If the SLES installer encounters an error, it may go undetected by GLM unless you are watching the console directly.
+* For troubleshooting or more complex deployment issues, direct iLO access to the server may be required. Please contact your GLM administrator to obtain iLO credentials or assistance.
 
 ### Known problems/limitations with this image
 
-* There are several arbitrary setting for the file system settings (file system type,
-  size of partition, etc) that are embedded in the autoinst file in this SLES OS image
-  (see glm-autoinst.xml.template).
-* This SLES service will set a LVM volume using all available storage on the server.
-  This is probably not the desired behavior for all situations but it does make the
-  service more robust (works when there is not sda but other storage is present).
-  This will change when we get more RAID setup support implemented.
-* There is NO automated installation of ProLiant Support Packs or other HPE
-  software that might be recommended for SLES on HPE servers.
+* The filesystem configuration (such as filesystem type, partition sizes, etc.) is predefined in the SLES OS image and embedded within the glm-autoinst.xml.template file. These settings can be customized if needed.
+* By default, this SLES service uses LVM and will allocate all available storage on the server. While this provides robustness—especially in cases where the primary disk is not /dev/sda - it may not be ideal for all deployment scenarios.
+  * Note: This behavior may change in future revisions once improved RAID support is implemented.
+* There is no automated installation of ProLiant Support Packs (PSP) or other HPE-recommended software for SLES on ProLiant servers. If required, these components must be installed manually after deployment.
 
 ### Login Credentials
 
-This GLM SLES recipe (by default) when deployed will:
-* Not create a non-root user login. Neither the GLM SLES autoinst nor
-  cloud-init files will create any user beyond the root user,
-* Not create a root password.  Neither the GLM SLES autoinst nor
-  cloud-init files will setup any root password,
-* The SSH Keys supplied in the GLM Host creation are added to the root
-  user by the cloud-init file (see glm-cloud-init.template).
+When deployed using this GLM SLES recipe, the following default behaviors apply:
+* No non-root user is created: Neither the autoinst.xml nor the cloud-init file provisions a standard (non-root) user account.
+* No root password is set: The deployment does not configure a root password. The root account is accessible only via SSH key authentication.
+* SSH keys from GLM Host definition are applied: The SSH public keys specified during host creation in the GreenLake Metal portal are injected into the root account via the cloud-init configuration (glm-cloud-init.template).
 
-The implications of the default setup are:
-* Because there is no user with a password setup, there is no way to
-  login to the SLES host via the GLM serial console,
-* The only way to login is via the root user via ssh and the GLM
-  installed SSH Keys,
-* If you want to create another non-root user account then you can add
-  that to either the autoinst or cloud-init files as desired.
+**Implications of the Default Setup**
+* Console login is not possible: Since no user account with a password is configured, login via the GLM serial console is not supported by default.
+* SSH access only via key authentication: Access to the system is possible only through the root user using SSH and the pre-configured SSH keys from GLM.
+* Optional user configuration: If additional user accounts (non-root) or a root password are needed, you can modify:
+  * the `autoinst.xml` (for setup during installation), or
+  * the `cloud-init` template (for post-install provisioning).
 
 ### SLES License
 
-SLES is a licensed software and users need to have a valid license key
-from SUSE to use SLES.  This install service does nothing to setup a
-SLES license key in any way.  Users are expected to manually use SLES
-tools to setup a SLES license on the host.
+SLES is licensed software, and users must possess a valid license key from SUSE to use it legally.
+This installation service does not include any mechanism to configure or apply a SLES license key.
+Users are responsible for manually registering and activating their SLES license on the host using SUSE’s standard licensing tools.
 
 ### Network Setup
 
-Host network setup should happen automatically.  To validate the
-network connectivity with curl for example:
-
+The host network setup is expected to be automatic. To verify network connectivity, you can use tools like curl. For example:
 ```
 [user@host ~]$ curl -k https://google.com
 <HTML><HEAD><meta http-equiv="content-type" content="text/html;charset=utf-8">
@@ -452,16 +463,11 @@ The document has moved
 [user@host ~]$
 ```
 
-The GreenLake Metal will setup the cloud-init files
-`/etc/cloud/cloud.cfg.d/9?_datasource.cfg`.  If the network setup is
-not right in these cloud-init files then it will never be right on the
-deployed host.  To validate the deployment of the cloud-init files see
-`/var/log/cloud-init-output.log`.
+GreenLake Metal configures the cloud-init files located at `/etc/cloud/cloud.cfg.d/9?_datasource.cfg`. If the network configuration within these cloud-init files is incorrect, the deployed host will not have proper network setup. To verify that the cloud-init files were applied correctly during deployment, please check the log file at `/var/log/cloud-init-output.log`.
 
 ### iSCSI (Nimble/etc) Setup
 
-When a host is setup with a iSCSI (Nimble/etc) volume then the Nimble
-volume should be automatcally setup, for example:
+When a host is configured with an iSCSI volume (e.g., Nimble), the Nimble volume should be automatically set up. For example:
 
 ```
 [root@host ~]# lsscsi
